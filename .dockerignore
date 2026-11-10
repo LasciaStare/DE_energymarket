@@ -1,0 +1,7 @@
+.git
+.env
+.venv
+lake
+target
+logs
+__pycache__

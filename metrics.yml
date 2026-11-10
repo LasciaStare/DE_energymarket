@@ -1,0 +1,20 @@
+price:
+  id: PrecBolsNaci
+  source: xm
+  period: hourly
+  max_value: 100000
+demand:
+  id: DemaReal
+  source: xm
+  period: hourly
+  max_value: 100000000
+reservoir:
+  id: PorcVoluUtilDiar
+  source: xm
+  period: daily
+  max_value: 1.2
+generation:
+  id: E17D25
+  source: simem
+  period: daily
+  max_value: 1000000000

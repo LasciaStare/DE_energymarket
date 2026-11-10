@@ -1,0 +1,66 @@
+x-logs: &logs
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: energy
+      POSTGRES_USER: energy
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD}
+      LOADER_PASSWORD: ${LOADER_PASSWORD:?set LOADER_PASSWORD}
+      READER_PASSWORD: ${READER_PASSWORD:?set READER_PASSWORD}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U energy -d energy -h 127.0.0.1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    mem_limit: 768m
+    cpus: 0.65
+    restart: unless-stopped
+    logging: *logs
+
+  api:
+    build: .
+    environment:
+      PGHOST: db
+      PGDATABASE: energy
+      PGUSER: market_reader
+      PGPASSWORD: ${READER_PASSWORD:?set READER_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${PUBLIC_PORT:-8000}:8000"
+    mem_limit: 256m
+    cpus: 0.25
+    restart: unless-stopped
+    logging: *logs
+
+  pipeline:
+    build: .
+    command: ["python", "pipeline.py", "--schedule"]
+    environment:
+      PGHOST: db
+      PGDATABASE: energy
+      PGUSER: market_loader
+      PGPASSWORD: ${LOADER_PASSWORD:?set LOADER_PASSWORD}
+      LAKE_DIR: /lake
+    volumes:
+      - lake:/lake
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 768m
+    cpus: 0.85
+    restart: unless-stopped
+    logging: *logs
+
+volumes:
+  lake:
+  postgres:

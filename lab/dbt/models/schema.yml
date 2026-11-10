@@ -1,0 +1,14 @@
+version: 2
+sources:
+  - name: market
+    schema: gold
+    tables:
+      - name: market_daily
+        columns:
+          - name: day
+            data_tests: [unique, not_null]
+models:
+  - name: weekly_market
+    columns:
+      - name: week
+        data_tests: [unique, not_null]

@@ -1,0 +1,8 @@
+name: energy_market
+version: "1.0"
+config-version: 2
+profile: energy_market
+model-paths: ["models"]
+models:
+  energy_market:
+    +materialized: view

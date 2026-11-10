@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulso Eléctrico Colombia</title>
+<style>
+:root{font:16px system-ui;color:#172c36;background:#eff4f4;--teal:#007664;--line:#d9e6e5}
+*{box-sizing:border-box}body{margin:0}header{background:#102f3a;color:white;padding:2.5rem max(1rem,calc((100% - 1120px)/2))}
+header a{color:#b0f4e2}h1{font-size:clamp(2rem,5vw,3.2rem);margin:.3rem 0}h2,h3{margin:.4rem 0}p{line-height:1.5}
+main{max-width:1152px;margin:auto;padding:1rem}.eyebrow{letter-spacing:.12em;font-size:.78rem;font-weight:700;color:#a5ebda}
+section{margin:1.6rem 0}.panel{padding:1.1rem;background:white;border:1px solid var(--line);border-radius:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:1rem}
+form{display:flex;flex-wrap:wrap;gap:1rem;align-items:end}label{display:grid;gap:.3rem}input,button{font:inherit;padding:.55rem;border:1px solid #849fa2;border-radius:6px}
+button{background:var(--teal);color:white;cursor:pointer}nav{display:flex;gap:1rem;flex-wrap:wrap}
+.scroll{overflow:auto;max-height:420px}table{border-collapse:collapse;width:100%;text-align:left;font-size:.9rem}td,th{padding:.55rem;border-bottom:1px solid var(--line)}
+th{position:sticky;top:0;background:#edf5f4}svg{width:100%;height:auto}small{color:#476067}
+</style>
+<header>
+  <span class="eyebrow">OBSERVATORIO · SISTEMA INTERCONECTADO NACIONAL</span>
+  <h1>Pulso Eléctrico Colombia</h1>
+  <p>Precio de bolsa, demanda, reservas y generación a partir de datos públicos.</p>
+  <nav aria-label="Secciones"><a href="#mercado">Mercado</a><a href="#operacion">Operación</a><a href="/docs">API</a></nav>
+</header>
+<main>
+<section id="mercado">
+<h2>Mercado</h2>
+<form id="filter" class="panel">
+  <label>Desde<input id="start" type="date" required></label>
+  <label>Hasta<input id="end" type="date" required></label>
+  <button>Consultar</button>
+</form>
+<p id="market-status" role="status"></p>
+<div id="series" class="grid"></div>
+<p id="correlation"></p>
+<div class="grid">
+ <article class="panel"><h3>Mezcla de generación</h3><p><small>Generación real estimada de SIMEM por día y grupo, en GWh.</small></p><div id="mix" class="scroll"></div></article>
+ <article class="panel"><h3>Picos horarios de precio</h3><p><small>Por encima del tercer cuartil + 1,5 rangos intercuartílicos para esa hora en la ventana elegida. Se requieren 14 observaciones por hora.</small></p><div id="spikes" class="scroll"></div></article>
+</div>
+</section>
+<section id="operacion">
+<h2>Operación</h2>
+<p id="ops-status" role="status"></p>
+<div class="grid">
+  <article class="panel"><h3>Frescura</h3><div id="fresh" class="scroll"></div></article>
+  <article class="panel"><h3>Últimas corridas</h3><div id="runs" class="scroll"></div></article>
+</div>
+</section>
+</main>
+<script>
+const el = id => document.getElementById(id);
+const fmt = new Intl.NumberFormat('es-CO', {maximumFractionDigits: 2});
+const names = {price:'Precio', demand:'Demanda', reservoir:'Embalses', generation:'Generación'};
+function node(tag, value) {
+  const element = document.createElement(tag);
+  if (value != null) element.textContent = value;
+  return element;
+}
+function table(id, headings, rows) {
+  const target = el(id);
+  target.replaceChildren();
+  if (!rows.length) { target.append(node('p', 'Sin registros en esta consulta.')); return; }
+  const grid = node('table'), head = grid.createTHead().insertRow(), body = grid.createTBody();
+  headings.forEach(label => head.append(node('th', label)));
+  rows.forEach(row => {
+    const tr = body.insertRow();
+    row.forEach(value => tr.insertCell().textContent = value ?? '—');
+  });
+  target.append(grid);
+}
+function chart(title, rows, key) {
+  const panel = node('article');
+  panel.className = 'panel';
+  panel.append(node('h3', title));
+  const byDay = new Map(rows.map(row => [row.day, row[key]]));
+  const values = [...byDay.values()].filter(Number.isFinite);
+  if (!values.length) { panel.append(node('p', 'Sin datos')); return panel; }
+  const lo = Math.min(...values), hi = Math.max(...values);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 320 105');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', title + '. Rango: ' + fmt.format(lo) + ' a ' + fmt.format(hi));
+  const first = Date.parse(el('start').value), last = Date.parse(el('end').value);
+  let path = '', pen = false;
+  for (let t = first; t <= last; t += 86400000) {
+    const value = byDay.get(new Date(t).toISOString().slice(0,10));
+    if (!Number.isFinite(value)) { pen = false; continue; }
+    const x = 6 + 308 * (t - first) / (last - first || 1);
+    const y = hi === lo ? 52 : 96 - 86 * (value - lo) / (hi - lo);
+    path += (pen ? 'L' : 'M') + x + ',' + y + 'h0.1';
+    pen = true;
+  }
+  const line = document.createElementNS(svg.namespaceURI, 'path');
+  for (const [k,v] of Object.entries({d:path,stroke:'#007664','stroke-width':2.5,'stroke-linecap':'round',fill:'none'})) line.setAttribute(k,v);
+  svg.append(line);
+  panel.append(svg, node('small', 'Mín. ' + fmt.format(lo) + ' · Máx. ' + fmt.format(hi) + ' · ' + values.length + ' días'));
+  return panel;
+}
+function correlation(rows, key) {
+  const pairs = rows.filter(r => Number.isFinite(r.price_cop_kwh) && Number.isFinite(r[key]));
+  if (pairs.length < 3) return 'datos insuficientes';
+  const mean = k => pairs.reduce((s,r) => s + r[k], 0) / pairs.length;
+  const mx = mean('price_cop_kwh'), my = mean(key);
+  let xy = 0, xx = 0, yy = 0;
+  for (const row of pairs) {
+    const x = row.price_cop_kwh - mx, y = row[key] - my;
+    xy += x*y; xx += x*x; yy += y*y;
+  }
+  return xx && yy ? fmt.format(xy / Math.sqrt(xx*yy)) + ' (n=' + pairs.length + ')' : 'sin variación';
+}
+async function data(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw Error('No se pudo consultar la API (' + response.status + ').');
+  return response.json();
+}
+async function market(event) {
+  event?.preventDefault();
+  const button = el('filter').querySelector('button');
+  button.disabled = true;
+  el('market-status').textContent = 'Consultando…';
+  for (const id of ['series','correlation','mix','spikes']) el(id).replaceChildren();
+  try {
+    const params = new URLSearchParams({start:el('start').value,end:el('end').value});
+    const result = await data('/v1/market?' + params);
+    el('series').append(chart('Precio medio · COP/kWh', result.daily, 'price_cop_kwh'),
+      chart('Demanda · GWh/día', result.daily, 'demand_gwh'),
+      chart('Volumen útil de embalses · %', result.daily, 'reservoir_pct'));
+    el('correlation').textContent = 'Correlación diaria de Pearson con el precio. Demanda: ' +
+      correlation(result.daily,'demand_gwh') + ' · Embalses: ' + correlation(result.daily,'reservoir_pct');
+    const mix = new Map();
+    for (const r of result.generation) {
+      if (!mix.has(r.day)) mix.set(r.day, [0,0,0]);
+      const kind = r.technology.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      const column = ['hidraulica','solar','eolica'].includes(kind) ? 0 : kind === 'termica' ? 1 : 2;
+      mix.get(r.day)[column] += r.generation_gwh;
+    }
+    table('mix',['Fecha','Renovable','Térmica','Otras'], [...mix].reverse().map(([day,values]) => [day,...values.map(v => fmt.format(v))]));
+    table('spikes',['Fecha','Hora local','COP/kWh','Umbral'], result.spikes.map(r =>
+      [r.day, String(r.hour - 1).padStart(2,'0') + ':00',fmt.format(r.price_cop_kwh),fmt.format(r.threshold)]));
+    el('market-status').textContent = result.daily.length + ' días con datos de mercado en la ventana.';
+  } catch (error) { el('market-status').textContent = error.message; }
+  finally { button.disabled = false; }
+}
+async function operations() {
+  try {
+    const result = await data('/v1/operations');
+    table('fresh',['Métrica','Último día','Antigüedad'],result.freshness.map(r=>[names[r.metric],r.latest_day,r.age_days+' días']));
+    table('runs',['Métrica','Ventana','Estado','Filas','Días rechazados'],result.runs.map(r=>
+      [names[r.metric],r.start_date+' / '+r.end_date,r.status,r.accepted,r.rejected]));
+    const success = result.runs.find(r=>r.status==='success');
+    el('ops-status').textContent = success ? 'Última carga exitosa: ' +
+      new Date(success.finished_at).toLocaleString('es-CO',{timeZone:'America/Bogota'}) + ' (Colombia)' : 'Aún no hay cargas exitosas.';
+  } catch (error) { el('ops-status').textContent = error.message; }
+}
+const today = new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Bogota',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const offset = days => new Date(Date.parse(today) - days * 86400000).toISOString().slice(0,10);
+const filters = new URLSearchParams(location.search);
+el('start').value = filters.get('start') || offset(30);
+el('end').value = filters.get('end') || offset(1);
+el('filter').addEventListener('submit', market);
+market();
+operations();
+</script>
+</html>
